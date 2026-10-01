@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LostPath — 분실물 경로 추적 센터</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="logo">🧭 LostPath</div>
+  <div class="tagline">잃어버린 시간을 되감아, 물건을 찾습니다</div>
+  <div class="status"><span id="statusDot" class="dot idle"></span><span id="statusText">추적 대기 중</span></div>
+</header>
+
+<main>
+  <aside>
+    <section class="card">
+      <h2>위치 추적</h2>
+      <p class="hint">장소에 도착하면 자동으로 1분간 위치를 기록하고, 이동 중에는 50m마다 경로를 남깁니다. (최대 24시간 보관)</p>
+      <div class="btn-row">
+        <button id="gpsBtn" class="btn">📍 GPS 추적 시작</button>
+        <button id="demoBtn" class="btn ghost">🎮 데모 경로 체험</button>
+      </div>
+      <button id="surveyBtn" class="btn home">📝 분실 물품 설문</button>
+      <div id="surveyMeta" class="micro"></div>
+      <p class="micro">실제 GPS 사용 시 위치 권한을 허용해 주세요. 브라우저 정책상 localhost 또는 HTTPS에서만 동작합니다.</p>
+      <div id="recordMeta" class="micro"></div>
+    </section>
+
+    <section class="card">
+      <h2>분실 신고</h2>
+      <button id="reportBtn" class="btn primary big">🔎 분실 신고하기</button>
+      <p class="micro">신고 기록은 이 브라우저에 저장됩니다. 분실 당시의 경로를 보려면 미리 GPS 추적을 시작하거나 데모 경로를 이용해 주세요.</p>
+      <div id="reportNotice" class="report-notice hidden" role="status"></div>
+      <div id="routeSummary" class="hidden">
+        <div id="itemLine" class="item-line hidden"></div>
+        <div id="lostTimeLabel" class="lost-time"></div>
+        <div class="stats">
+          <div class="stat"><span class="stat-label">이동 거리</span><span class="stat-value" id="distVal">-</span></div>
+          <div class="stat"><span class="stat-label">이동 시간</span><span class="stat-value" id="timeVal">-</span></div>
+          <div class="stat"><span class="stat-label">기록 지점</span><span class="stat-value" id="ptsVal">-</span></div>
+          <div class="stat"><span class="stat-label">방문 장소</span><span class="stat-value" id="dwellVal">-</span></div>
+        </div>
+        <div class="slider-wrap">
+          <input type="range" id="slider" min="0" max="0" value="0">
+          <div id="cursorInfo" class="micro">타임라인을 움직여 그 시점의 위치를 확인하세요</div>
+        </div>
+        <button id="playBtn" class="btn small">▶ 경로 재생</button>
+        <button id="revealBtn" class="btn small reveal hidden">🎯 분실 지점 공개</button>
+        <div id="tipBox" class="micro tip hidden"></div>
+        <div id="spotAnalysis" class="hidden">
+          <h4 class="spot-h">📍 먼저 확인할 장소 (추정 점수 순)</h4>
+          <div id="spotList"></div>
+        </div>
+        <div id="aiCard" class="ai-box hidden">
+          <div class="ai-head">
+            <div class="ai-avatar">🤖</div>
+            <div class="ai-title"><b>LostPath 규칙 기반 분석</b><span id="aiStatus">분석 대기 중</span></div>
+          </div>
+          <div id="aiBody"></div>
+        </div>
+        <p class="micro warn">🟠 표시된 곳은 도착 후 1분간 자동 녹음된 방문 장소입니다 (집은 제외).</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>신고 기록</h2>
+      <div id="reportsList" class="reports"><p class="micro">아직 신고 기록이 없습니다.</p></div>
+    </section>
+
+    <footer><button id="clearBtn" class="link-btn">전체 기록 초기화</button></footer>
+  </aside>
+
+  <div id="map"></div>
+</main>
+
+<div id="surveyModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3>📋 분실 물품 설문</h3>
+    <p class="hint">어디서 무엇을 했는지 알려주시면 장소별 분실 의심 점수를 계산합니다.</p>
+    <div class="survey-progress">
+      <span id="surveyStepLabel">1 / 3 단계</span>
+      <div class="survey-progress-track"><i id="surveyProgress"></i></div>
+    </div>
+    <section id="surveyStep1" class="survey-step">
+      <label class="field-label">무엇을 잃어버리셨나요?</label>
+      <div id="itemChoices" class="choices"></div>
+      <input type="text" id="customItem" class="text-input hidden" placeholder="잃어버린 물품 이름을 입력하세요">
+    </section>
+    <section id="surveyStep2" class="survey-step hidden">
+      <label class="field-label">최근 다녀온 장소를 선택해 주세요 (중복 선택)</label>
+      <div id="placeChoices" class="choices"></div>
+    </section>
+    <section id="surveyStep3" class="survey-step hidden">
+      <label class="field-label">각 장소에서 무엇을 하셨나요? (중복 선택)</label>
+      <div id="activityWrap"></div>
+    </section>
+    <div class="btn-row right">
+      <button id="surveyClose" class="btn ghost">닫기</button>
+      <button id="surveyBack" class="btn ghost hidden">이전</button>
+      <button id="surveyNext" class="btn primary">다음</button>
+      <button id="surveySave" class="btn primary hidden">설문 완료</button>
+    </div>
+  </div>
+</div>
+
+<div id="demoModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3>시연용 시나리오 선택</h3>
+    <p class="hint">시나리오를 선택하면 최근 1시간의 이동 기록이 만들어지고, 분실 신고 화면까지 자동으로 진행됩니다.</p>
+    <div id="scenarioList" class="scenarios"></div>
+    <div class="btn-row right"><button id="demoCancel" class="btn ghost">닫기</button></div>
+  </div>
+</div>
+
+<div id="modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3>언제쯤 잃어버리셨나요?</h3>
+    <p class="hint">해당 시각 이후 이동한 경로를 지도에 표시해 드립니다.</p>
+    <div class="range-value"><span id="rangeVal">60</span>분 전</div>
+    <input type="range" id="reportRange" min="5" max="240" step="5" value="60">
+    <div class="range-marks"><span>5분</span><span>4시간</span></div>
+    <div class="btn-row right">
+      <button id="modalCancel" class="btn ghost">취소</button>
+      <button id="modalConfirm" class="btn primary">신고 기록 저장</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
